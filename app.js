@@ -1,7 +1,7 @@
 // Global State
 let allVerses = [];
 let uniqueWords = [];
-let legalTextContent = ""; // Stores the legal text for the footer link
+let legalTextContent = ""; // This acts as your "legal.txt" in memory
 const BIBLE_URL = 'bom.txt';
 
 // DOM Elements
@@ -17,14 +17,15 @@ const legalLink = document.getElementById('legal-link');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    const savedData = localStorage.getItem('bom_data_v3'); // v3 to force update
+    // We change the version to 'v4' to force a fresh reload of the new logic
+    const savedData = localStorage.getItem('bom_data_v4'); 
     
     if (savedData) {
         try {
             const parsed = JSON.parse(savedData);
             allVerses = parsed.verses;
             uniqueWords = parsed.words;
-            legalTextContent = parsed.legal; // Retrieve saved legal text
+            legalTextContent = parsed.legal;
             updateStatus("Ready to search.");
             return; 
         } catch (e) {
@@ -53,36 +54,33 @@ async function loadAndParseText() {
         updateStatus("Processing text...");
         const fullText = await response.text();
         
-        // --- SPLIT LOGIC ---
-        // We split the file into two parts: Legal (Before Title Page) and Scriptures (After)
-        const splitMarker = "AN ACCOUNT WRITTEN BY THE HAND OF MORMON";
-        const splitIndex = fullText.indexOf(splitMarker);
+        // --- NEW SPLIT LOGIC (Line Based) ---
+        // 1. Split the entire file into an array of lines
+        const allLines = fullText.split(/\r?\n/);
+
+        // 2. Extract the first 260 lines for Legal/Disclaimer
+        // (We join them back together so it reads like a document)
+        legalTextContent = allLines.slice(0, 260).join('\n');
+
+        // 3. Extract the rest (Line 261 to the end) for Scriptures
+        const rawScriptureText = allLines.slice(260).join('\n');
+
+        // --- Parsing Scriptures ---
+        // We split the scripture part by "Double Newline" to get paragraphs/verses
+        const rawParagraphs = rawScriptureText.split(/\n\s*\n/);
         
-        let scriptureText = "";
-
-        if (splitIndex !== -1) {
-            // PART 1: Save Legal Text
-            legalTextContent = fullText.substring(0, splitIndex);
-            
-            // PART 2: Save Scripture Text (and add the title back)
-            scriptureText = splitMarker + fullText.substring(splitIndex + splitMarker.length);
-        } else {
-            // Fallback if marker not found
-            scriptureText = fullText;
-            legalTextContent = "Legal text marker not found.";
-        }
-
-        // Parse ONLY the scriptureText for search
-        const rawParagraphs = scriptureText.split(/\r?\n\r?\n/);
         const tempWords = new Set();
         allVerses = []; 
 
         rawParagraphs.forEach((para, index) => {
             const cleanPara = para.trim().replace(/\s+/g, ' ');
+            
+            // Only keep it if it has real text (more than 20 chars)
             if (cleanPara.length > 20) {
                 allVerses.push({ id: index, text: cleanPara });
 
-                // Tokenize words
+                // Tokenize words for the search suggestions
+                // Matches words with 3 or more letters
                 const words = cleanPara.toLowerCase().match(/\b[a-z]{3,}\b/g);
                 if (words) words.forEach(w => tempWords.add(w));
             }
@@ -92,7 +90,7 @@ async function loadAndParseText() {
 
         // Save EVERYTHING to LocalStorage
         try {
-            localStorage.setItem('bom_data_v3', JSON.stringify({
+            localStorage.setItem('bom_data_v4', JSON.stringify({
                 verses: allVerses,
                 words: uniqueWords,
                 legal: legalTextContent
@@ -137,6 +135,7 @@ function performSearch(query) {
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
 
+    // Limit results to 50
     const results = allVerses.filter(v => v.text.toLowerCase().includes(q)).slice(0, 50);
 
     if (results.length === 0) {
@@ -147,7 +146,9 @@ function performSearch(query) {
     results.forEach(verse => {
         const box = document.createElement('div');
         box.className = 'verse-box';
+        // Highlight logic
         const snippet = verse.text.replace(new RegExp(`(${q})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
+        // Create a pseudo-reference title
         const refTitle = verse.text.substring(0, 30).trim() + "...";
 
         box.innerHTML = `<span class="verse-ref">${refTitle}</span><div class="verse-snippet">${snippet}</div>`;
@@ -167,15 +168,17 @@ function performSearch(query) {
 
 function openPopup(title, text) {
     modalRef.innerText = title;
-    modalText.innerText = text; // Just text, preserves line breaks if using white-space: pre-wrap
+    modalText.innerText = text;
     modalOverlay.classList.remove('hidden');
 }
 
 // Open Legal Text when footer link is clicked
-legalLink.onclick = (e) => {
-    e.preventDefault();
-    openPopup("Legal Disclosure", legalTextContent || "Loading legal text...");
-};
+if(legalLink) {
+    legalLink.onclick = (e) => {
+        e.preventDefault();
+        openPopup("Legal Disclosure", legalTextContent || "Loading legal text...");
+    };
+}
 
 function closePopup() { modalOverlay.classList.add('hidden'); }
 closeBtn.onclick = closePopup;
