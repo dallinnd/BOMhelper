@@ -1,7 +1,8 @@
 // Global State
 let allVerses = [];
 let uniqueWords = [];
-const BIBLE_URL = 'bom.txt'; // Must be in the same folder as index.html
+let legalTextContent = ""; // Stores the legal text for the footer link
+const BIBLE_URL = 'bom.txt';
 
 // DOM Elements
 const input = document.getElementById('search-input');
@@ -12,17 +13,18 @@ const modalOverlay = document.getElementById('modal-overlay');
 const modalText = document.getElementById('modal-text');
 const modalRef = document.querySelector('.modal-ref');
 const closeBtn = document.querySelector('.close-btn');
+const legalLink = document.getElementById('legal-link');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check LocalStorage first to load instantly
-    const savedData = localStorage.getItem('bom_data_v2'); // Changed to v2 to force refresh
+    const savedData = localStorage.getItem('bom_data_v3'); // v3 to force update
     
     if (savedData) {
         try {
             const parsed = JSON.parse(savedData);
             allVerses = parsed.verses;
             uniqueWords = parsed.words;
+            legalTextContent = parsed.legal; // Retrieve saved legal text
             updateStatus("Ready to search.");
             return; 
         } catch (e) {
@@ -30,7 +32,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
     
-    // If no data, fetch the file
     await loadAndParseText();
 });
 
@@ -46,88 +47,75 @@ async function loadAndParseText() {
     
     try {
         const response = await fetch(BIBLE_URL);
-        
-        // Specific Error Handling for GitHub Pages
-        if (response.status === 404) {
-            throw new Error("File not found (404). Check filename is exactly 'bom.txt' on GitHub.");
-        }
-        if (!response.ok) {
-            throw new Error(`Network Error: ${response.status}`);
-        }
+        if (response.status === 404) throw new Error("File 'bom.txt' not found.");
+        if (!response.ok) throw new Error(`Network Error: ${response.status}`);
 
         updateStatus("Processing text...");
-        let text = await response.text();
+        const fullText = await response.text();
         
-        // --- CLEANUP: Remove Project Gutenberg Headers/Footers ---
-        // UPDATED: Start at the Title Page instead of 1 Nephi
-        const startMarker = "AN ACCOUNT WRITTEN BY THE HAND OF MORMON";
-        const startIndex = text.indexOf(startMarker);
+        // --- SPLIT LOGIC ---
+        // We split the file into two parts: Legal (Before Title Page) and Scriptures (After)
+        const splitMarker = "AN ACCOUNT WRITTEN BY THE HAND OF MORMON";
+        const splitIndex = fullText.indexOf(splitMarker);
         
-        if (startIndex !== -1) {
-            // Cut off the legal text before this point
-            text = text.substring(startIndex);
-            // Re-add the main title for looks
-            text = "THE BOOK OF MORMON\n\n" + text;
+        let scriptureText = "";
+
+        if (splitIndex !== -1) {
+            // PART 1: Save Legal Text
+            legalTextContent = fullText.substring(0, splitIndex);
+            
+            // PART 2: Save Scripture Text (and add the title back)
+            scriptureText = splitMarker + fullText.substring(splitIndex + splitMarker.length);
+        } else {
+            // Fallback if marker not found
+            scriptureText = fullText;
+            legalTextContent = "Legal text marker not found.";
         }
 
-        // Parsing Logic
-        // Split by double newlines (paragraphs)
-        const rawParagraphs = text.split(/\r?\n\r?\n/);
+        // Parse ONLY the scriptureText for search
+        const rawParagraphs = scriptureText.split(/\r?\n\r?\n/);
         const tempWords = new Set();
-        
-        allVerses = []; // Reset
+        allVerses = []; 
 
         rawParagraphs.forEach((para, index) => {
             const cleanPara = para.trim().replace(/\s+/g, ' ');
-            
-            // Filter out short headers or empty lines (Length > 20)
             if (cleanPara.length > 20) {
-                allVerses.push({
-                    id: index,
-                    text: cleanPara
-                });
+                allVerses.push({ id: index, text: cleanPara });
 
-                // Tokenize for suggestions (simple split)
-                // Filter out common small words
+                // Tokenize words
                 const words = cleanPara.toLowerCase().match(/\b[a-z]{3,}\b/g);
-                if (words) {
-                    words.forEach(w => tempWords.add(w));
-                }
+                if (words) words.forEach(w => tempWords.add(w));
             }
         });
 
         uniqueWords = Array.from(tempWords).sort();
 
-        // Save to LocalStorage
+        // Save EVERYTHING to LocalStorage
         try {
-            localStorage.setItem('bom_data_v2', JSON.stringify({
+            localStorage.setItem('bom_data_v3', JSON.stringify({
                 verses: allVerses,
-                words: uniqueWords
+                words: uniqueWords,
+                legal: legalTextContent
             }));
         } catch (e) {
-            console.warn("Storage full or disabled, will fetch next time");
+            console.warn("Storage full, will fetch next time");
         }
 
         updateStatus("Ready to search.");
         
     } catch (err) {
         updateStatus(`Error: ${err.message}`);
-        console.error("Full Error Details:", err);
     }
 }
 
 // --- Search & UI ---
 
-// 1. Suggestions (Debounced)
 input.addEventListener('input', (e) => {
     const val = e.target.value.toLowerCase();
     suggestionsArea.innerHTML = '';
-    
     if (val.length < 2) return;
 
-    // Find matches (limit to 10 for performance)
     const matches = uniqueWords.filter(w => w.startsWith(val)).slice(0, 15);
-    
     matches.forEach(word => {
         const pill = document.createElement('div');
         pill.className = 'pill';
@@ -141,19 +129,14 @@ input.addEventListener('input', (e) => {
     });
 });
 
-// 2. Trigger Search
 sendBtn.addEventListener('click', () => performSearch(input.value));
-input.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') performSearch(input.value);
-});
+input.addEventListener('keypress', (e) => { if (e.key === 'Enter') performSearch(input.value); });
 
 function performSearch(query) {
     if (!query) return;
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
 
-    // Search Verses
-    // Limit results to 50 to prevent freezing the browser on common words like "the"
     const results = allVerses.filter(v => v.text.toLowerCase().includes(q)).slice(0, 50);
 
     if (results.length === 0) {
@@ -161,53 +144,39 @@ function performSearch(query) {
         return;
     }
 
-    // Render Results
     results.forEach(verse => {
         const box = document.createElement('div');
         box.className = 'verse-box';
-        
-        // Highlight logic
         const snippet = verse.text.replace(new RegExp(`(${q})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
-        
-        // Create a pseudo-reference title (First 30 chars...)
         const refTitle = verse.text.substring(0, 30).trim() + "...";
 
-        box.innerHTML = `
-            <span class="verse-ref">${refTitle}</span>
-            <div class="verse-snippet">${snippet}</div>
-        `;
-        
+        box.innerHTML = `<span class="verse-ref">${refTitle}</span><div class="verse-snippet">${snippet}</div>`;
         box.onclick = () => openPopup(refTitle, verse.text);
         resultsArea.appendChild(box);
     });
     
-    // Hint if truncated
     if (results.length === 50) {
         const hint = document.createElement('div');
-        hint.style.textAlign = 'center';
-        hint.style.padding = '10px';
-        hint.style.color = 'var(--text-light)';
-        hint.innerText = "Results limited to 50 verses. Be more specific.";
+        hint.style.textAlign = 'center'; hint.style.padding = '10px'; hint.style.color = 'var(--text-light)';
+        hint.innerText = "Results limited to 50 verses.";
         resultsArea.appendChild(hint);
     }
 }
 
-// --- Popup Logic ---
+// --- Popup & Legal Logic ---
 
 function openPopup(title, text) {
     modalRef.innerText = title;
-    modalText.innerText = text;
+    modalText.innerText = text; // Just text, preserves line breaks if using white-space: pre-wrap
     modalOverlay.classList.remove('hidden');
 }
 
-function closePopup() {
-    modalOverlay.classList.add('hidden');
-}
+// Open Legal Text when footer link is clicked
+legalLink.onclick = (e) => {
+    e.preventDefault();
+    openPopup("Legal Disclosure", legalTextContent || "Loading legal text...");
+};
 
+function closePopup() { modalOverlay.classList.add('hidden'); }
 closeBtn.onclick = closePopup;
-
-modalOverlay.addEventListener('click', (e) => {
-    if (e.target === modalOverlay) {
-        closePopup();
-    }
-});
+modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closePopup(); });
