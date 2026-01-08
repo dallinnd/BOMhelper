@@ -56,6 +56,15 @@ input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px r
 .verse-ref { font-weight: 700; color: var(--primary); font-size: 0.85rem; margin-bottom: 6px; display: block; }
 .verse-snippet { color: var(--text-light); font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* Footer */
+footer {
+    padding: 15px; text-align: center; border-top: 1px solid var(--border); background: var(--bg);
+}
+#legal-link {
+    font-size: 0.8rem; color: var(--text-light); text-decoration: none;
+}
+#legal-link:hover { text-decoration: underline; }
+
 /* Modal Popup */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
@@ -80,4 +89,5 @@ input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px r
 
 .modal-body {
   padding: 25px; overflow-y: auto; font-size: 1.1rem; line-height: 1.6; color: var(--text);
+  white-space: pre-wrap; /* Keeps formatting for legal text */
 }
