@@ -1,7 +1,7 @@
 // Global State
 let allVerses = [];
 let uniqueWords = [];
-let legalTextContent = ""; // This acts as your "legal.txt" in memory
+let legalTextContent = ""; 
 const BIBLE_URL = 'bom.txt';
 
 // DOM Elements
@@ -17,8 +17,7 @@ const legalLink = document.getElementById('legal-link');
 
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', async () => {
-    // We change the version to 'v4' to force a fresh reload of the new logic
-    const savedData = localStorage.getItem('bom_data_v4'); 
+    const savedData = localStorage.getItem('bom_data_v5'); // Bump version to v5
     
     if (savedData) {
         try {
@@ -28,15 +27,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             legalTextContent = parsed.legal;
             updateStatus("Ready to search.");
             return; 
-        } catch (e) {
-            console.warn("Saved data corrupt, reloading file...");
-        }
+        } catch (e) { console.warn("Saved data corrupt, reloading..."); }
     }
-    
     await loadAndParseText();
 });
-
-// --- Logic ---
 
 function updateStatus(msg) {
     const el = document.querySelector('.placeholder-msg');
@@ -45,65 +39,66 @@ function updateStatus(msg) {
 
 async function loadAndParseText() {
     updateStatus("Downloading scripture file...");
-    
     try {
         const response = await fetch(BIBLE_URL);
-        if (response.status === 404) throw new Error("File 'bom.txt' not found.");
-        if (!response.ok) throw new Error(`Network Error: ${response.status}`);
-
-        updateStatus("Processing text...");
+        if (!response.ok) throw new Error("File not found or network error.");
         const fullText = await response.text();
-        
-        // --- NEW SPLIT LOGIC (Line Based) ---
-        // 1. Split the entire file into an array of lines
+
+        // 1. Split Lines & Separate Legal Text
         const allLines = fullText.split(/\r?\n/);
-
-        // 2. Extract the first 260 lines for Legal/Disclaimer
-        // (We join them back together so it reads like a document)
         legalTextContent = allLines.slice(0, 260).join('\n');
-
-        // 3. Extract the rest (Line 261 to the end) for Scriptures
         const rawScriptureText = allLines.slice(260).join('\n');
 
-        // --- Parsing Scriptures ---
-        // We split the scripture part by "Double Newline" to get paragraphs/verses
+        // 2. Split by Double Newline (Paragraphs)
         const rawParagraphs = rawScriptureText.split(/\n\s*\n/);
         
         const tempWords = new Set();
         allVerses = []; 
 
         rawParagraphs.forEach((para, index) => {
-            const cleanPara = para.trim().replace(/\s+/g, ' ');
-            
-            // Only keep it if it has real text (more than 20 chars)
-            if (cleanPara.length > 20) {
-                allVerses.push({ id: index, text: cleanPara });
+            let cleanPara = para.trim();
+            if (cleanPara.length < 5) return; // Skip empty stuff
 
-                // Tokenize words for the search suggestions
-                // Matches words with 3 or more letters
-                const words = cleanPara.toLowerCase().match(/\b[a-z]{3,}\b/g);
-                if (words) words.forEach(w => tempWords.add(w));
+            // --- SMARTER PARSING START ---
+            // We check if the FIRST line looks like a reference (e.g. "1 Nephi 3:7")
+            // This Regex looks for: Digits, Names, Digits, Colon, Digits
+            // Example match: "1 Nephi 3:7" or "Alma 30:44"
+            const lines = cleanPara.split('\n');
+            let reference = "";
+            let textContent = cleanPara;
+
+            // If the first line is short and has a number/colon, assume it is the Header
+            if (lines.length > 1 && lines[0].length < 50 && /\d+[:]\d+/.test(lines[0])) {
+                reference = lines[0].trim(); // "1 Nephi 1:5"
+                // Remove the first line from the text content
+                textContent = lines.slice(1).join(' ').trim(); 
+            } else {
+                // Fallback: Use the first 30 chars as the reference
+                reference = cleanPara.substring(0, 30).trim() + "...";
             }
+            // --- SMARTER PARSING END ---
+
+            allVerses.push({ 
+                id: index, 
+                ref: reference,  // Store distinct Reference
+                text: textContent // Store distinct Text
+            });
+
+            // Tokenize words from text only
+            const words = textContent.toLowerCase().match(/\b[a-z]{3,}\b/g);
+            if (words) words.forEach(w => tempWords.add(w));
         });
 
         uniqueWords = Array.from(tempWords).sort();
 
-        // Save EVERYTHING to LocalStorage
-        try {
-            localStorage.setItem('bom_data_v4', JSON.stringify({
-                verses: allVerses,
-                words: uniqueWords,
-                legal: legalTextContent
-            }));
-        } catch (e) {
-            console.warn("Storage full, will fetch next time");
-        }
+        localStorage.setItem('bom_data_v5', JSON.stringify({
+            verses: allVerses,
+            words: uniqueWords,
+            legal: legalTextContent
+        }));
 
         updateStatus("Ready to search.");
-        
-    } catch (err) {
-        updateStatus(`Error: ${err.message}`);
-    }
+    } catch (err) { updateStatus(`Error: ${err.message}`); }
 }
 
 // --- Search & UI ---
@@ -135,7 +130,6 @@ function performSearch(query) {
     resultsArea.innerHTML = '';
     const q = query.toLowerCase();
 
-    // Limit results to 50
     const results = allVerses.filter(v => v.text.toLowerCase().includes(q)).slice(0, 50);
 
     if (results.length === 0) {
@@ -146,20 +140,23 @@ function performSearch(query) {
     results.forEach(verse => {
         const box = document.createElement('div');
         box.className = 'verse-box';
-        // Highlight logic
+        
+        // Highlight found word in the text
         const snippet = verse.text.replace(new RegExp(`(${q})`, 'gi'), '<b style="color:var(--primary);">$1</b>');
-        // Create a pseudo-reference title
-        const refTitle = verse.text.substring(0, 30).trim() + "...";
 
-        box.innerHTML = `<span class="verse-ref">${refTitle}</span><div class="verse-snippet">${snippet}</div>`;
-        box.onclick = () => openPopup(refTitle, verse.text);
+        box.innerHTML = `
+            <span class="verse-ref">${verse.ref}</span>
+            <div class="verse-snippet">${snippet}</div>
+        `;
+        // Pass distinct ref and text to popup
+        box.onclick = () => openPopup(verse.ref, verse.text);
         resultsArea.appendChild(box);
     });
     
     if (results.length === 50) {
         const hint = document.createElement('div');
-        hint.style.textAlign = 'center'; hint.style.padding = '10px'; hint.style.color = 'var(--text-light)';
         hint.innerText = "Results limited to 50 verses.";
+        hint.style.cssText = "text-align:center; padding:10px; color:var(--text-light);";
         resultsArea.appendChild(hint);
     }
 }
@@ -167,16 +164,15 @@ function performSearch(query) {
 // --- Popup & Legal Logic ---
 
 function openPopup(title, text) {
-    modalRef.innerText = title;
-    modalText.innerText = text;
+    modalRef.innerText = title; // This is now JUST "1 Nephi 1:5"
+    modalText.innerText = text; // This is the scripture text
     modalOverlay.classList.remove('hidden');
 }
 
-// Open Legal Text when footer link is clicked
 if(legalLink) {
     legalLink.onclick = (e) => {
         e.preventDefault();
-        openPopup("Legal Disclosure", legalTextContent || "Loading legal text...");
+        openPopup("Legal Disclosure", legalTextContent || "Loading...");
     };
 }
 
