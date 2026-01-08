@@ -57,15 +57,11 @@ input[type="text"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px r
 .verse-snippet { color: var(--text-light); font-size: 0.95rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Footer */
-footer {
-    padding: 15px; text-align: center; border-top: 1px solid var(--border); background: var(--bg);
-}
-#legal-link {
-    font-size: 0.8rem; color: var(--text-light); text-decoration: none;
-}
+footer { padding: 15px; text-align: center; border-top: 1px solid var(--border); background: var(--bg); }
+#legal-link { font-size: 0.8rem; color: var(--text-light); text-decoration: none; }
 #legal-link:hover { text-decoration: underline; }
 
-/* Modal Popup */
+/* Modal Popup - UPDATED STYLES */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
   display: flex; align-items: center; justify-content: center;
@@ -80,14 +76,32 @@ footer {
 }
 .modal-overlay.hidden .modal-content { transform: translateY(20px); }
 
+/* Updated Header for Centering */
 .modal-header {
   padding: 15px 20px; border-bottom: 1px solid var(--border);
-  display: flex; justify-content: space-between; align-items: center;
+  display: flex; justify-content: center; /* Center horizontally */
+  align-items: center; position: relative;
 }
-.modal-ref { font-weight: 700; color: var(--primary); }
-.close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-light); }
 
+/* Updated Reference Title Style */
+.modal-ref { 
+  font-weight: 600; 
+  color: var(--text-light); /* Lighter Text Color */
+  font-size: 1rem; 
+  text-align: center;
+}
+
+/* Close button absolute positioning */
+.close-btn { 
+  position: absolute; right: 15px; top: 12px;
+  background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-light); 
+}
+
+/* Modal Body */
 .modal-body {
-  padding: 25px; overflow-y: auto; font-size: 1.1rem; line-height: 1.6; color: var(--text);
-  white-space: pre-wrap; /* Keeps formatting for legal text */
+  padding: 25px; overflow-y: auto; 
+  font-size: 1.15rem; /* Slightly larger for reading */
+  line-height: 1.6; color: var(--text);
+  white-space: pre-wrap;
+  text-align: left; /* Ensure text is left aligned even if title is centered */
 }
